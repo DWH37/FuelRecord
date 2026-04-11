@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.fuelrecord.data.AppDatabase
+import com.example.fuelrecord.data.CsvUtils
 import com.example.fuelrecord.data.FuelRecord
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -28,6 +30,15 @@ data class MonthlyStats(
 )
 
 data class OverallStats(
+    val totalFuel: Double,
+    val totalCost: Double,
+    val avgConsumption: Double?,
+    val totalDistance: Double,
+    val recordCount: Int
+)
+
+data class YearlyStats(
+    val year: String,
     val totalFuel: Double,
     val totalCost: Double,
     val avgConsumption: Double?,
@@ -102,6 +113,23 @@ class FuelRecordViewModel(application: Application) : AndroidViewModel(applicati
             }.sortedByDescending { it.yearMonth }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val yearlyStats: StateFlow<List<YearlyStats>> =
+        recordsWithConsumption.map { records ->
+            records.groupBy { rc ->
+                val cal = Calendar.getInstance().apply { timeInMillis = rc.record.date }
+                cal.get(Calendar.YEAR).toString()
+            }.map { (year, yearRecords) ->
+                val totalFuel = yearRecords.sumOf { it.record.fuelAmount }
+                val totalCost = yearRecords.sumOf { it.record.cost }
+                val consumptions = yearRecords.mapNotNull { it.consumption }
+                val avgConsumption =
+                    if (consumptions.isNotEmpty()) consumptions.average() else null
+                val distances = yearRecords.mapNotNull { it.distance }
+                val totalDistance = distances.sum()
+                YearlyStats(year, totalFuel, totalCost, avgConsumption, totalDistance, yearRecords.size)
+            }.sortedByDescending { it.year }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     suspend fun getRecordById(id: Long): FuelRecord? = dao.getRecordById(id)
 
     fun addRecord(record: FuelRecord) {
@@ -114,5 +142,38 @@ class FuelRecordViewModel(application: Application) : AndroidViewModel(applicati
 
     fun deleteRecord(record: FuelRecord) {
         viewModelScope.launch { dao.delete(record) }
+    }
+
+    // ---- 导出/导入 ----
+
+    private val _operationResult = MutableStateFlow<String?>(null)
+    val operationResult: StateFlow<String?> = _operationResult
+
+    fun clearOperationResult() {
+        _operationResult.value = null
+    }
+
+    suspend fun exportToCsv(): String {
+        val records = dao.getAllRecordsSnapshot()
+        return CsvUtils.toCsv(records)
+    }
+
+    fun importFromCsv(csvContent: String, replaceAll: Boolean) {
+        viewModelScope.launch {
+            try {
+                val records = CsvUtils.fromCsv(csvContent)
+                if (records.isEmpty()) {
+                    _operationResult.value = "未找到有效数据"
+                    return@launch
+                }
+                if (replaceAll) {
+                    dao.deleteAll()
+                }
+                dao.insertAll(records)
+                _operationResult.value = "成功导入 ${records.size} 条记录"
+            } catch (e: Exception) {
+                _operationResult.value = "导入失败: ${e.message}"
+            }
+        }
     }
 }

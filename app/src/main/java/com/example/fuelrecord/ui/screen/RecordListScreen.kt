@@ -1,5 +1,8 @@
 package com.example.fuelrecord.ui.screen
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,31 +23,41 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.fuelrecord.viewmodel.FuelRecordViewModel
 import com.example.fuelrecord.viewmodel.OverallStats
 import com.example.fuelrecord.viewmodel.RecordWithConsumption
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,7 +72,50 @@ fun RecordListScreen(
 ) {
     val records by viewModel.recordsWithConsumption.collectAsState()
     val overallStats by viewModel.overallStats.collectAsState()
+    val operationResult by viewModel.operationResult.collectAsState()
+
     var showDeleteDialog by remember { mutableStateOf<RecordWithConsumption?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
+    // Uri of file chosen for import; triggers the import mode dialog
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Show snackbar whenever operationResult changes
+    LaunchedEffect(operationResult) {
+        operationResult?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearOperationResult()
+        }
+    }
+
+    // SAF launcher: export CSV — user picks save location
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                try {
+                    val csv = viewModel.exportToCsv()
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(csv.toByteArray(Charsets.UTF_8))
+                    }
+                    snackbarHostState.showSnackbar("导出成功")
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("导出失败: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // SAF launcher: import CSV — user picks file
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { pendingImportUri = it }
+    }
 
     Scaffold(
         topBar = {
@@ -72,8 +128,41 @@ fun RecordListScreen(
                     IconButton(onClick = onAddClick) {
                         Icon(Icons.Default.Add, contentDescription = "添加")
                     }
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导出 CSV") },
+                                onClick = {
+                                    showMenu = false
+                                    val fileName = "fuel_records_${
+                                        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                                            .format(Date())
+                                    }.csv"
+                                    exportLauncher.launch(fileName)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导入 CSV") },
+                                onClick = {
+                                    showMenu = false
+                                    importLauncher.launch(arrayOf("text/*", "*/*"))
+                                }
+                            )
+                        }
+                    }
                 }
             )
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(snackbarData = data)
+            }
         }
     ) { padding ->
         if (records.isEmpty()) {
@@ -136,6 +225,49 @@ fun RecordListScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = null }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    // Import mode dialog: append or replace
+    pendingImportUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text("导入方式") },
+            text = { Text("请选择导入方式：\n「追加」将新数据添加到现有记录中；\n「替换」将清空所有现有记录后导入。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val csvContent = try {
+                        context.contentResolver.openInputStream(uri)
+                            ?.bufferedReader(Charsets.UTF_8)?.readText() ?: ""
+                    } catch (e: Exception) {
+                        scope.launch { snackbarHostState.showSnackbar("读取文件失败: ${e.message}") }
+                        ""
+                    }
+                    pendingImportUri = null
+                    if (csvContent.isNotBlank()) {
+                        viewModel.importFromCsv(csvContent, replaceAll = true)
+                    }
+                }) {
+                    Text("替换", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val csvContent = try {
+                        context.contentResolver.openInputStream(uri)
+                            ?.bufferedReader(Charsets.UTF_8)?.readText() ?: ""
+                    } catch (e: Exception) {
+                        scope.launch { snackbarHostState.showSnackbar("读取文件失败: ${e.message}") }
+                        ""
+                    }
+                    pendingImportUri = null
+                    if (csvContent.isNotBlank()) {
+                        viewModel.importFromCsv(csvContent, replaceAll = false)
+                    }
+                }) {
+                    Text("追加")
                 }
             }
         )

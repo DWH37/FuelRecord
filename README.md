@@ -16,8 +16,14 @@
 
 ### 统计分析
 - **总览**：累计加油量、总花费、平均油耗
+- **年度统计**：按年汇总加油次数、总里程、加油量、花费、平均油耗、平均成本
 - **月度统计**：按月汇总加油量、花费、平均油耗
 - **油耗趋势**：简易条形图展示月度油耗变化
+
+### 数据管理
+- **导出 CSV**：将所有记录导出为 CSV 文件，方便备份或在电脑上查看
+- **导入 CSV**：从 CSV 文件导入记录，支持"追加"和"替换"两种模式
+- **升级保留数据**：使用 Room Migration 机制，应用升级时已有数据不会丢失
 
 ## 安装说明
 
@@ -79,7 +85,8 @@ app/src/main/java/com/example/fuelrecord/
 ├── data/
 │   ├── FuelRecord.kt          # 数据实体
 │   ├── FuelRecordDao.kt       # 数据访问对象
-│   └── AppDatabase.kt         # Room 数据库
+│   ├── AppDatabase.kt         # Room 数据库
+│   └── CsvUtils.kt            # CSV 导入导出工具
 ├── viewmodel/
 │   └── FuelRecordViewModel.kt # 业务逻辑层
 ├── ui/

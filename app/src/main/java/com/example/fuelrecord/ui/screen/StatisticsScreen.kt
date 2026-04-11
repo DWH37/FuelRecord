@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.example.fuelrecord.viewmodel.FuelRecordViewModel
 import com.example.fuelrecord.viewmodel.MonthlyStats
 import com.example.fuelrecord.viewmodel.OverallStats
+import com.example.fuelrecord.viewmodel.YearlyStats
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +47,7 @@ fun StatisticsScreen(
     onNavigateBack: () -> Unit
 ) {
     val overallStats by viewModel.overallStats.collectAsState()
+    val yearlyStats by viewModel.yearlyStats.collectAsState()
     val monthlyStats by viewModel.monthlyStats.collectAsState()
 
     Scaffold(
@@ -72,6 +74,21 @@ fun StatisticsScreen(
         ) {
             item {
                 OverallStatsCard(overallStats)
+            }
+
+            if (yearlyStats.isNotEmpty()) {
+                item {
+                    Text(
+                        "年度统计",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                items(yearlyStats) { stats ->
+                    YearlyStatsCard(stats)
+                }
             }
 
             if (monthlyStats.isNotEmpty()) {
@@ -235,6 +252,56 @@ private fun ConsumptionTrendCard(monthlyStats: List<MonthlyStats>) {
                         String.format("%.1f", stats.avgConsumption),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.width(32.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YearlyStatsCard(stats: YearlyStats) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "${stats.year} 年",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                StatsGridItem("加油次数", "${stats.recordCount} 次")
+                StatsGridItem("总里程", String.format("%.0f km", stats.totalDistance))
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                StatsGridItem("加油量", String.format("%.1f L", stats.totalFuel))
+                StatsGridItem("花费", String.format("¥%.2f", stats.totalCost))
+            }
+            stats.avgConsumption?.let { avg ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StatsGridItem("平均油耗", String.format("%.1f L/100km", avg))
+                    val avgCostPerKm = if (stats.totalDistance > 0)
+                        stats.totalCost / stats.totalDistance else null
+                    StatsGridItem(
+                        "平均成本",
+                        avgCostPerKm?.let { String.format("¥%.2f/km", it) } ?: "--"
                     )
                 }
             }

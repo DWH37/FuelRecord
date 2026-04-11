@@ -47,6 +47,11 @@ android {
     }
 }
 
+// Room schema 导出路径，用于生成迁移 SQL，保证升级时数据不丢失
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
 
     implementation libs.androidx.core.ktx
