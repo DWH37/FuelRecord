@@ -3,6 +3,7 @@ package com.example.fuelrecord.ui.screen
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +63,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun RecordListScreen(
     viewModel: FuelRecordViewModel,
@@ -202,7 +203,8 @@ fun RecordListScreen(
                     RecordCard(
                         recordWithConsumption = recordWithConsumption,
                         onClick = { onRecordClick(recordWithConsumption.record.id) },
-                        onDelete = { showDeleteDialog = recordWithConsumption }
+                        onDelete = { showDeleteDialog = recordWithConsumption },
+                        modifier = Modifier.animateItemPlacement()
                     )
                 }
             }
@@ -325,13 +327,19 @@ private fun StatItem(label: String, value: String) {
 private fun RecordCard(
     recordWithConsumption: RecordWithConsumption,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val record = recordWithConsumption.record
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val dateStr = remember(record.date) { dateFormat.format(Date(record.date)) }
+    val mileageStr = remember(record.totalMileage) { String.format("%.0f km", record.totalMileage) }
+    val fuelStr = remember(record.fuelAmount, record.unitPrice, record.cost) {
+        String.format("%.2fL × ¥%.2f = ¥%.2f", record.fuelAmount, record.unitPrice, record.cost)
+    }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp)
@@ -343,7 +351,7 @@ private fun RecordCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    dateFormat.format(Date(record.date)),
+                    dateStr,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -381,17 +389,14 @@ private fun RecordCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    String.format("%.0f km", record.totalMileage),
+                    mileageStr,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    String.format(
-                        "%.2fL × ¥%.2f = ¥%.2f",
-                        record.fuelAmount, record.unitPrice, record.cost
-                    ),
+                    fuelStr,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }

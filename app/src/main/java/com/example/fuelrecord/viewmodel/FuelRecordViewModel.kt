@@ -23,6 +23,8 @@ data class RecordWithConsumption(
 
 data class MonthlyStats(
     val yearMonth: String,
+    val year: Int,
+    val month: Int,
     val totalFuel: Double,
     val totalCost: Double,
     val avgConsumption: Double?,
@@ -109,8 +111,17 @@ class FuelRecordViewModel(application: Application) : AndroidViewModel(applicati
                 val consumptions = monthRecords.mapNotNull { it.consumption }
                 val avgConsumption =
                     if (consumptions.isNotEmpty()) consumptions.average() else null
-                MonthlyStats(yearMonth, totalFuel, totalCost, avgConsumption, monthRecords.size)
+                val parts = yearMonth.split("-")
+                MonthlyStats(
+                    yearMonth, parts[0].toInt(), parts[1].toInt(),
+                    totalFuel, totalCost, avgConsumption, monthRecords.size
+                )
             }.sortedByDescending { it.yearMonth }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableYears: StateFlow<List<Int>> =
+        monthlyStats.map { stats ->
+            stats.map { it.year }.distinct().sortedDescending()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val yearlyStats: StateFlow<List<YearlyStats>> =
